@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>视频</title>
+    <title>点击播放视频</title>
     <style>
-        /* 清除所有边距，让视频完全占据视口 */
+        /* 全局重置：全黑背景，无滚动条 */
         * {
             margin: 0;
             padding: 0;
@@ -14,27 +14,125 @@
         html, body {
             width: 100%;
             height: 100%;
-            overflow: hidden;        /* 防止滚动条 */
-            background: #000;        /* 视频加载前或边缘露出时为黑色 */
+            overflow: hidden;
+            background: black;  /* 黑色基底，确保任何缝隙都是黑的 */
         }
+
+        /* 视频层：默认透明，铺满全屏，禁止点击（防止播放后误触暂停/显示控件） */
         video {
-            display: block;          /* 去除行内元素间隙 */
+            position: fixed;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
-            object-fit: cover;       /* 铺满屏幕，按比例裁剪（避免黑边） */
-            pointer-events: none;    /* 禁止点击暂停/播放，使视频成为纯背景 */
+            object-fit: cover;      /* 视频按比例铺满，可能裁剪但无黑边 */
+            opacity: 0;             /* 初始完全透明，不显示第一帧 */
+            pointer-events: none;   /* 禁止所有鼠标事件，播放后用户无法点击暂停 */
+            transition: opacity 0.2s ease; /* 柔和出现（可选） */
+            background: black;      /* 视频透明时的背景色，确保无闪烁 */
+        }
+
+        /* 覆盖层：黑色背景 + 文字提示，占据全屏，点击即播放 */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;              /* 纯黑背景 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;                    /* 确保在视频上方 */
+            cursor: pointer;                 /* 鼠标变成小手，提示可点 */
+            user-select: none;               /* 防止选中文字 */
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+        }
+
+        /* 文字样式：简洁醒目，略带柔光 */
+        .overlay span {
+            color: white;
+            font-size: clamp(1.2rem, 8vw, 2.4rem); /* 响应式字体 */
+            font-weight: 500;
+            letter-spacing: 2px;
+            text-align: center;
+            padding: 1.2em 1.5em;
+            background: rgba(255, 255, 255, 0.1); /* 极淡的磨砂效果，增加层次 */
+            border-radius: 60px;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7);
+            transition: background 0.2s;
+        }
+
+        .overlay:hover span {
+            background: rgba(255, 255, 255, 0.15); /* 悬停轻微反馈，但不影响功能 */
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        /* 提示文字中的小箭头 (可选装饰) */
+        .overlay span::before {
+            content: '▶';
+            display: inline-block;
+            margin-right: 12px;
+            font-size: 0.9em;
+            opacity: 0.9;
         }
     </style>
 </head>
 <body>
-    <!-- 
-        自动播放必须静音(muted) + playsinline(尤其iOS)，
-        loop 让视频循环播放，没有任何控制按钮。
-    -->
-    <video autoplay loop muted playsinline>
-        <!-- 使用稳定、免费的测试视频源 (Big Buck Bunny 短片) -->
+    <!-- 视频元素：预加载，循环，内联播放（移动端友好） -->
+    <video id="bgVideo" loop playsinline preload="auto" muted>
+        <!-- ⚠️ 重要：请将 src 替换为你自己的视频文件路径（例如 video.mp4） -->
         <source src="watermelon.mp4" type="video/mp4">
+        <!-- 备用提示（极少出现） -->
         您的浏览器不支持 video 标签。
     </video>
+
+    <!-- 全屏黑色覆盖层，显示点击播放文字 -->
+    <div class="overlay" id="playOverlay">
+        <span>点击播放视频</span>
+    </div>
+
+    <script>
+        (function() {
+            const video = document.getElementById('bgVideo');
+            const overlay = document.getElementById('playOverlay');
+
+            // 确保视频元素已就绪
+            video.load(); // 显式加载
+
+            // 点击覆盖层（即点击屏幕任意位置，因为覆盖层全屏）
+            overlay.addEventListener('click', function onPlayClick() {
+                // 隐藏覆盖层（移出屏幕）
+                overlay.style.display = 'none';
+
+                // 显示视频（从不透明变为可见）
+                video.style.opacity = '1';
+
+                // 确保声音开启（因为初始设置了 muted 以便预加载，现在取消静音）
+                video.muted = false;
+
+                // 尝试播放视频，并处理可能的错误（比如网络问题）
+                const playPromise = video.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        console.warn('视频播放失败:', error);
+                        // 如果自动播放失败，可以提示用户手动操作？但这里点击手势应该99%成功
+                        // 极少数情况（如浏览器限制），我们再次尝试将 muted 设为 true 并播放？
+                        // 但需求要求有声音，所以不降级。
+                        // 可以简单将错误打印，不影响体验。
+                    });
+                }
+            });
+
+            // 可选：预加载完成后，如果视频格式不支持，可以静默忽略
+            video.addEventListener('error', function(e) {
+                console.error('视频加载错误，请检查文件路径或格式:', e);
+                // 可以简单地在覆盖层上显示一个小提示（但保持黑屏）
+                // 这里不额外处理，保持黑屏和文字，用户点击后仍会尝试播放（可能无画面）
+            });
+        })();
+    </script>
 </body>
 </html>
